@@ -1,0 +1,11 @@
+experiment_name,algorithm,run_id,accuracy,f1_score,precision,recall,roc_auc
+RandomForest_Shallow_50Trees,random_forest,65e8c346,0.7647,0.773,0.7899,0.7569,0.8292
+RandomForest_Medium_100Trees,random_forest,0ec9bc8d,0.7647,0.7698,0.7985,0.7431,0.838
+RandomForest_Deep_200Trees,random_forest,51827af9,0.7647,0.7698,0.7985,0.7431,0.8365
+SVM_RBF_Kernel,svm,322dc107,0.7537,0.7616,0.781,0.7431,0.8234
+GradientBoosting_Slow_50Trees,gradient_boosting,782fe354,0.7426,0.7518,0.7681,0.7361,0.8252
+GradientBoosting_Fast_150Trees,gradient_boosting,0f82a91b,0.7353,0.7465,0.7571,0.7361,0.7984
+LogisticRegression_Baseline,logistic_regression,6f2407f6,0.7353,0.7447,0.7609,0.7292,0.8116
+LogisticRegression_L2_Weak,logistic_regression,c1473a0d,0.7353,0.7447,0.7609,0.7292,0.8119
+LogisticRegression_L2_Strong,logistic_regression,a38e2496,0.7316,0.7402,0.7591,0.7222,0.812
+GradientBoosting_Default_100Trees,gradient_boosting,f78accff,0.7243,0.7312,0.7556,0.7083,0.8172

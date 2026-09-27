@@ -1,0 +1,32 @@
+{
+  "captured_at": "2026-09-27T14:38:40.544632+00:00",
+  "api_health": {
+    "status": "healthy",
+    "model_loaded": true,
+    "model_name": "wine_quality_model",
+    "model_version": "fallback-heuristic",
+    "uptime_seconds": 168.0
+  },
+  "prediction": {
+    "prediction": 0,
+    "confidence": 0.2,
+    "model_name": "wine_quality_model",
+    "model_version": "fallback-heuristic",
+    "latency_ms": 0.06,
+    "timestamp": "2026-09-27T14:38:40.537352+00:00"
+  },
+  "drift_health": {
+    "status": "healthy",
+    "reference_loaded": true,
+    "reference_samples": 1359,
+    "production_samples": 0,
+    "last_analysis": null,
+    "reports_count": 2
+  },
+  "metrics": [
+    "api_requests_total{endpoint=\"/health\",method=\"GET\",status=\"200\"} 2.0",
+    "api_requests_total{endpoint=\"/predict\",method=\"POST\",status=\"200\"} 2.0",
+    "api_requests_total{endpoint=\"/metrics\",method=\"GET\",status=\"200\"} 1.0",
+    "model_predictions_total{model_name=\"wine_quality_model\",model_version=\"fallback-heuristic\"} 2.0"
+  ]
+}

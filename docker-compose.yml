@@ -1,0 +1,238 @@
+services:
+  # ==========================================
+  # DATABASE (Postgres for MLflow & Airflow)
+  # ==========================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: wine-mlops-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mlops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mlopspassword}
+      POSTGRES_DB: ${POSTGRES_DB:-mlflow}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlops"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mlops-network
+
+  # ==========================================
+  # MINIO - S3 Compatible Artifact Store
+  # ==========================================
+  minio:
+    image: minio/minio:latest
+    container_name: wine-mlops-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniopassword}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - mlops-network
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: wine-mlops-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Waiting for MinIO...';
+      sleep 3;
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin miniopassword;
+      /usr/bin/mc mb myminio/mlflow-artifacts --ignore-existing;
+      /usr/bin/mc anonymous set download myminio/mlflow-artifacts;
+      echo 'Bucket mlflow-artifacts is ready!';
+      exit 0;
+      "
+    networks:
+      - mlops-network
+
+  # ==========================================
+  # MLFLOW TRACKING & MODEL REGISTRY
+  # ==========================================
+  mlflow:
+    build:
+      context: ./mlflow
+      dockerfile: Dockerfile
+    container_name: wine-mlops-mlflow
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-miniopassword}
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      MLFLOW_S3_IGNORE_TLS: "true"
+    ports:
+      - "${MLFLOW_HOST_PORT:-5050}:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://0.0.0.0:5000/health\")'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - mlops-network
+
+  # ==========================================
+  # FASTAPI MODEL SERVING
+  # ==========================================
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: wine-mlops-api
+    ports:
+      - "8000:8000"
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MODEL_NAME: wine_quality_model
+      MODEL_STAGE: Production
+      EVIDENTLY_SERVICE_URL: http://evidently:8001
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: miniopassword
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      MLFLOW_S3_IGNORE_TLS: "true"
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - mlops-network
+
+  # ==========================================
+  # EVIDENTLY AI - DRIFT DETECTION SERVICE
+  # ==========================================
+  evidently:
+    build:
+      context: ./evidently_service
+      dockerfile: Dockerfile
+    container_name: wine-mlops-drift
+    ports:
+      - "8001:8001"
+    volumes:
+      - evidently_reports:/app/reports
+    environment:
+      EVIDENTLY_DRIFT_THRESHOLD: "0.1"
+      EVIDENTLY_MIN_SAMPLES: "30"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - mlops-network
+
+  # ==========================================
+  # PROMETHEUS METRICS MONITORING
+  # ==========================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: wine-mlops-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+      - evidently
+    networks:
+      - mlops-network
+
+  # ==========================================
+  # GRAFANA OBSERVABILITY DASHBOARDS
+  # ==========================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: wine-mlops-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - mlops-network
+
+  # ==========================================
+  # APACHE AIRFLOW ORCHESTRATOR
+  # ==========================================
+  airflow-init:
+    image: apache/airflow:2.10.2
+    container_name: wine-mlops-airflow-init
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://mlops:mlopspassword@postgres:5432/mlflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    command: version
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mlops-network
+
+  airflow-webserver:
+    image: apache/airflow:2.10.2
+    container_name: wine-mlops-airflow-webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://mlops:mlopspassword@postgres:5432/mlflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      PYTHONPATH: /opt/airflow/mlops
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./:/opt/airflow/mlops
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: standalone
+    networks:
+      - mlops-network
+
+volumes:
+  postgres_data:
+  minio_data:
+  prometheus_data:
+  grafana_data:
+  evidently_reports:
+
+networks:
+  mlops-network:
+    driver: bridge

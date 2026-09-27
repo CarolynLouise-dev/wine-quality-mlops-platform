@@ -1,0 +1,11 @@
+{
+  "total_rows": 1599,
+  "clean_rows": 1359,
+  "rejected_rows": 240,
+  "bad_fraction": 0.1501,
+  "max_allowed_bad_fraction": 0.2,
+  "issues_breakdown": {
+    "is_duplicate": 240
+  },
+  "status": "PASSED"
+}

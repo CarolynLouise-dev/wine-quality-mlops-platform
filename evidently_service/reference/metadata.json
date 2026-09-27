@@ -1,0 +1,10 @@
+{
+  "description": "Test Reference",
+  "rows": 60,
+  "features": [
+    "f1",
+    "f2",
+    "quality"
+  ],
+  "timestamp": "2026-09-27T08:44:41.918643"
+}
